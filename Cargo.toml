@@ -1,12 +1,11 @@
 [package]
 name = "gemini-gui"
 description = "Friendly interface to chat with an Gemini API."
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-license = "Unlicense OR MIT OR Apache-2.0"
+license = "MIT"
 readme = "README.md"
 exclude = ["media/**"]
-# documentation = "https://docs.rs/ellama"
 categories = ["visualization", "gui"]
 keywords = ["gemini", "llm", "ai", "egui", "gui", "ui"]
 homepage = "https://github.com/LaVashikk/Gemini-eGUI"
@@ -59,7 +58,7 @@ egui_extras = { version = "0.31.1", features = ["file", "image"] }
 base64-stream = "4.0"
 url = "2"
 openssl = { version = "0.10.73", features = ["vendored"] }
-gemini-rust = { git = "https://github.com/LaVashikk/gemini-rust-pr.git" } 
+gemini-rust = { git = "https://github.com/LaVashikk/gemini-rust-pr.git" }
 gemini-code-assist-adapter = { path = "./gemini-code-assist-adapter" }
 mime_guess = "2.0.5"
 base64 = "0.22.1"
