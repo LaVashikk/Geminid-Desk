@@ -5,11 +5,13 @@ use eframe::{
     emath::Numeric,
 };
 use egui_modal::{Icon, Modal};
-use gemini_client_api::gemini::{ask::Gemini, types::request::SystemInstruction};
+use gemini_rust::{Gemini, GeminiBuilder, GenerationConfig, Model, ThinkingConfig};
+use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Default, Clone, Deserialize, Serialize)]
+#[serde(default)]
 pub struct ModelPicker {
     pub selected: GeminiModel,
     settings: ModelSettings,
@@ -26,6 +28,10 @@ pub enum RequestInfoType {
 )]
 pub enum GeminiModel {
     #[default]
+    #[serde(rename = "gemini-3-flash-preview")]
+    Gemini30Flash,
+    #[serde(rename = "gemini-3-pro-preview")]
+    Gemini30Pro,
     #[serde(rename = "gemini-2.0-flash")]
     Gemini20Flash,
 
@@ -89,6 +95,18 @@ pub enum GeminiModel {
     // NewModelName,
 }
 
+impl From<GeminiModel> for Model {
+    fn from(val: GeminiModel) -> Self {
+        let model_id = serde_json::to_value(val)
+            .expect("Failed to serialize model enum")
+            .as_str()
+            .expect("Model enum should serialize to string")
+            .to_string();
+
+        Model::Custom(format!("models/{}", model_id))
+    }
+}
+
 /// Allows the enum to be printed or converted to its string representation.
 impl fmt::Display for GeminiModel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -149,29 +167,27 @@ const TEMPLATE_HINT_TEXT: &str =
     "A system prompt for the model. E.g., 'You are a helpful assistant that specializes in writing Rust code.'";
 
 impl ModelPicker {
-    pub fn create_client(&self, api_key: &str, proxy_path: Option<String>) -> Gemini {
-        let sys_prompt = if let Some(sys_prompt) = &self.system_prompt {
-            if !sys_prompt.is_empty() {
-                Some(SystemInstruction::from_str(sys_prompt.clone()))
-            } else {
-                None
+    pub fn create_client(
+        &self,
+        api_key: &str,
+        proxy_path: Option<String>,
+    ) -> Result<Gemini, gemini_rust::ClientError> {
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(proxy_url) = proxy_path {
+            if !proxy_url.is_empty() {
+                if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
+                    client_builder = client_builder.proxy(proxy);
+                } else {
+                    log::error!("Invalid proxy URL, ignoring it.");
+                }
             }
-        } else {
-            None
-        };
+        }
 
-        let mut client = Gemini::new_with_timeout(
-            api_key.to_string(),
-            self.selected.to_string(),
-            sys_prompt,
-            proxy_path,
-            std::time::Duration::from_secs(60),
-        );
-
-        let val = client.set_generation_config();
-        *val = self.get_generation_config();
-
-        client
+        GeminiBuilder::new(api_key)
+            .with_model(Model::from(self.selected))
+            .with_http_client(client_builder)
+            .build()
     }
 
     pub fn show<R>(&mut self, ui: &mut egui::Ui, _request_info: &mut R)
@@ -224,12 +240,13 @@ impl ModelPicker {
     }
 
     #[inline]
-    pub fn get_generation_config(&self) -> serde_json::Value {
+    pub fn get_generation_config(&self) -> GenerationConfig {
         self.settings.clone().into()
     }
 }
 
 #[derive(Default, Clone, Deserialize, Serialize)]
+#[serde(default)]
 struct ModelSettings {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -242,37 +259,24 @@ struct ModelSettings {
 
 impl From<ModelSettings> for serde_json::Value {
     fn from(value: ModelSettings) -> Self {
-        let mut map = serde_json::Map::new();
-        if let Some(temp) = value.temperature {
-            map.insert("temperature".to_string(), json!(temp));
-        }
-        if let Some(top_p) = value.top_p {
-            map.insert("topP".to_string(), json!(top_p));
-        }
-        if let Some(top_k) = value.top_k {
-            map.insert("topK".to_string(), json!(top_k));
-        }
-        if let Some(max) = value.num_predict {
-            if max > 0 {
-                map.insert("maxOutputTokens".to_string(), json!(max));
-            }
-        }
-        if let Some(stop) = value.stop {
-            if !stop.is_empty() {
-                map.insert("stopSequences".to_string(), json!(stop));
-            }
-        }
+        let mut config = GenerationConfig::default();
+        config.temperature = value.temperature;
+        config.top_p = value.top_p;
+        config.top_k = value.top_k.map(|k| k as i32);
+        config.max_output_tokens = value.num_predict;
+        config.stop_sequences = value.stop;
+
         if value.include_thoughts || value.thinking_budget.is_some() {
-            let mut thinking_config = serde_json::Map::new();
+            let mut thinking_config = ThinkingConfig::default();
             if value.include_thoughts {
-                thinking_config.insert("includeThoughts".to_string(), json!(true));
+                thinking_config.include_thoughts = Some(true);
             }
             if let Some(budget) = value.thinking_budget {
-                thinking_config.insert("thinkingBudget".to_string(), json!(budget));
+                thinking_config.thinking_budget = Some(budget);
             }
-            map.insert("thinkingConfig".to_string(), json!(thinking_config));
+            config.thinking_config = Some(thinking_config);
         }
-        serde_json::Value::Object(map)
+        config
     }
 }
 

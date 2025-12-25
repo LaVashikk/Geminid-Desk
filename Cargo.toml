@@ -29,6 +29,7 @@ egui_commonmark = { git = "https://github.com/zeozeozeo/egui_commonmark.git", br
     "better_syntax_highlighting",
     "svg",
 ] }
+egui-snow = "0.31.0"
 env_logger = "0.11"
 flowync = { version = "5.1", features = ["compact"] }
 log = "0.4.27"
@@ -51,18 +52,22 @@ serde_json = "1"
 egui-notify = "0.19.0"
 ron = "0.10.1"
 fastrand = "2.3.0"
+futures = "0.3"
 egui-twemoji = "0.7.1"
 image = "0.25.6"
 egui_extras = { version = "0.31.1", features = ["file", "image"] }
 base64-stream = "4.0"
 url = "2"
 openssl = { version = "0.10.73", features = ["vendored"] }
+gemini-rust = { git = "https://github.com/LaVashikk/gemini-rust-pr.git" } 
 gemini-client-api = { git = "https://github.com/LaVashikk/llms-client" }
 mime_guess = "2.0.5"
 base64 = "0.22.1"
 enum-iterator = "2.1.0"
 open = "5.3.2"
-
+reqwest = { version = "0.12.24", features = ["socks"] }
+futures-util = "0.3.31"
+time = { version = "0.3", features = ["serde"] }
 
 [features]
 default = []

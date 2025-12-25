@@ -8,7 +8,6 @@ pub fn set_style(ctx: &egui::Context) {
 
     let mut fonts = egui::FontDefinitions::empty();
 
-    // install custom fonts
     log::info!("installing custom fonts");
     fonts.font_data.insert(
         "Inter-Regular".to_owned(),
@@ -22,7 +21,7 @@ pub fn set_style(ctx: &egui::Context) {
         "NotoEmoji-Regular".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/NotoEmoji-Regular.ttf"))
             .tweak(FontTweak {
-                scale: 0.81, // make it smaller
+                scale: 0.81,
                 ..Default::default()
             })
             .into(),
@@ -31,7 +30,7 @@ pub fn set_style(ctx: &egui::Context) {
         "emoji-icon-font".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/emoji-icon-font.ttf"))
             .tweak(FontTweak {
-                scale: 0.88, // make it smaller
+                scale: 0.88,
 
                 // probably not correct, but this does make texts look better
                 y_offset_factor: 0.11, // move glyphs down to better align with common fonts

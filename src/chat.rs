@@ -15,13 +15,9 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use egui_modal::{Icon, Modal};
 use egui_virtual_list::VirtualList;
 use flowync::{error::Compact, CompactFlower, CompactHandle};
-use gemini_client_api::gemini::{
-    ask::Gemini,
-    types::{
-        request::{BlockThreshold, HarmCategory, Part, SafetySetting},
-        sessions::Session,
-    },
-};
+use futures_util::TryStreamExt;
+use gemini_rust::{
+    SafetySetting, UsageMetadata,
 use std::{
     io::Write,
     path::PathBuf,
@@ -35,25 +31,25 @@ use tokio_stream::StreamExt;
 
 const SAFETY_SETTINGS: [SafetySetting; 4] = [
     SafetySetting {
-        category: HarmCategory::HarmCategoryHarassment,
-        threshold: BlockThreshold::BlockNone,
+        category: HarmCategory::Harassment,
+        threshold: HarmBlockThreshold::BlockNone,
     },
     SafetySetting {
-        category: HarmCategory::HarmCategoryHateSpeech,
-        threshold: BlockThreshold::BlockNone,
+        category: HarmCategory::HateSpeech,
+        threshold: HarmBlockThreshold::BlockNone,
     },
     SafetySetting {
-        category: HarmCategory::HarmCategorySexuallyExplicit,
-        threshold: BlockThreshold::BlockNone,
+        category: HarmCategory::SexuallyExplicit,
+        threshold: HarmBlockThreshold::BlockNone,
     },
     SafetySetting {
-        category: HarmCategory::HarmCategoryDangerousContent,
-        threshold: BlockThreshold::BlockNone,
+        category: HarmCategory::DangerousContent,
+        threshold: HarmBlockThreshold::BlockNone,
     },
 ];
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-enum Role {
+pub enum MessageRole {
     User,
     Assistant,
 }
@@ -61,23 +57,26 @@ enum Role {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Message {
-    model: GeminiModel,
-    content: String,
-    role: Role,
+    pub model: GeminiModel,
+    pub content: String,
+    pub role: MessageRole,
     #[serde(skip)]
-    is_generating: bool,
+    pub is_generating: bool,
     #[serde(skip)]
-    requested_at: Instant,
-    time: chrono::DateTime<chrono::Utc>,
-    generation_time: Option<Duration>,
+    pub requested_at: Instant,
+    pub time: chrono::DateTime<chrono::Utc>,
+    pub generation_time: Option<Duration>,
     #[serde(skip)]
-    clicked_copy: bool,
-    is_error: bool,
+    pub clicked_copy: bool,
+    pub is_error: bool,
     #[serde(skip)]
-    is_speaking: bool,
-    files: Vec<PathBuf>,
-    is_prepending: bool,
-    is_thought: bool,
+    pub is_speaking: bool,
+    pub files: Vec<Attachment>,
+    pub is_prepending: bool,
+    pub is_thought: bool,
+    pub usage: Option<UsageMetadata>,
+    #[serde(skip)]
+    pub status_message: Option<String>,
 }
 
 impl Default for Message {
@@ -96,6 +95,8 @@ impl Default for Message {
             is_prepending: false,
             is_thought: false,
             generation_time: None,
+            usage: None,
+            status_message: None,
         }
     }
 }
@@ -147,7 +148,7 @@ impl Message {
     fn user(content: String, model: GeminiModel, files: Vec<PathBuf>) -> Self {
         Self {
             content,
-            role: Role::User,
+            role: MessageRole::User,
             is_generating: false,
             model,
             files,
@@ -159,7 +160,7 @@ impl Message {
     fn assistant(content: String, model: GeminiModel) -> Self {
         Self {
             content,
-            role: Role::Assistant,
+            role: MessageRole::Assistant,
             is_generating: true,
             model,
             ..Default::default()
@@ -423,8 +424,26 @@ impl Message {
 }
 
 // <completion progress, final completion, error>
-type CompletionFlower = CompactFlower<(usize, Part), (usize, String), (usize, String)>;
-type CompletionFlowerHandle = CompactHandle<(usize, Part), (usize, String), (usize, String)>;
+#[derive(Debug, Clone)]
+pub enum ChatProgress {
+    Part(Part),
+    // Status update (e.g. "Uploading files...")
+    Status {
+        message: String,
+    },
+    FileUploading {
+        path: PathBuf,
+    },
+    FileUploaded {
+        path: PathBuf,
+        file: gemini_rust::File,
+    },
+}
+
+pub type CompletionFlower =
+    CompactFlower<(usize, ChatProgress), (usize, String, Option<UsageMetadata>), (usize, String)>;
+pub type CompletionFlowerHandle =
+    CompactHandle<(usize, ChatProgress), (usize, String, Option<UsageMetadata>), (usize, String)>;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -943,52 +962,89 @@ impl Chat {
         self.flower
             .extract(|(idx, part)| {
                 last_processed_idx = idx;
-                // let model = self // todo remove?
-                //     .messages
-                //     .get(idx - 1)
-                //     .map_or(GeminiModel::default(), |m| m.model);
 
-                match part {
-                    Part::text(data) => {
-                        // Safely use unwrap, as we always add
-                        // a placeholder message in send_message before running.
-                        let current_response_msg = self.messages.last_mut().unwrap();
+                // Clear status message when receiving new parts
+                if let ChatProgress::Part(_) = progress {
+                    if let Some(message) = self.messages.get_mut(idx) {
+                        message.status_message = None;
+                    }
+                }
 
-                        if *data.thought() {
-                            // This is a thought
-                            if !current_response_msg.is_thought {
-                                // If this is the first part of a "thought", turn our
-                                // placeholder message into a full "thought" message.
-                                current_response_msg.is_thought = true;
-                            }
-                            // Just append the "thought" text.
-                            current_response_msg.content.push_str(data.text());
-                        } else {
-                            if current_response_msg.is_thought {
-                                // "Thoughts" have just ended. Turn off the spinner for them.
-                                current_response_msg.is_generating = false;
-                                current_response_msg.generation_time =
-                                    Some(current_response_msg.requested_at.elapsed());
-
-                                // And create a NEW, separate message for the final answer.
-                                // This will keep the thought block on screen.
-                                let model = current_response_msg.model;
-                                let mut answer_message =
-                                    Message::assistant(data.text().into(), model);
-                                answer_message.is_generating = true; // It has its own spinner.
-                                self.messages.push(answer_message);
-                            } else {
-                                // Either there were no "thoughts", or this is a continuation of the answer.
-                                // Just append the text to the current last message.
-                                current_response_msg.content.push_str(data.text());
+                match progress {
+                    ChatProgress::Status { message } => {
+                        if let Some(msg) = self.messages.get_mut(idx) {
+                            msg.status_message = Some(message);
+                        }
+                    }
+                    ChatProgress::FileUploading { path } => {
+                        if let Some(msg) = self.messages.get_mut(idx) {
+                            if let Some(attachment) =
+                                msg.files.iter_mut().find(|a| a.path == path)
+                            {
+                                attachment.state = AttachmentState::Uploading;
                             }
                         }
                     }
-                    _ => todo!(),
+                    ChatProgress::FileUploaded { path, file } => {
+                        if let Some(msg) = self.messages.get_mut(idx) {
+                            if let Some(attachment) =
+                                msg.files.iter_mut().find(|a| a.path == path)
+                            {
+                                log::info!(
+                                    "Updating attachment state to Uploaded for {}",
+                                    path.display()
+                                );
+                                attachment.state = AttachmentState::Uploaded(file);
+                            }
+                        }
+                    }
+                    ChatProgress::Part(part) => {
+                        match part {
+                            Part::Text { text, thought, .. } => {
+                                // Safely use unwrap, as we always add
+                                // a placeholder message in send_message before running.
+                                let current_response_msg = self.messages.last_mut().unwrap();
+
+                                if thought.unwrap_or(false) {
+                                    // This is a thought
+                                    if !current_response_msg.is_thought {
+                                        // If this is the first part of a "thought", turn our
+                                        // placeholder message into a full "thought" message.
+                                        current_response_msg.is_thought = true;
+                                    }
+                                    // Just append the "thought" text.
+                                    current_response_msg.content.push_str(&text);
+                                } else {
+                                    if current_response_msg.is_thought {
+                                        // "Thoughts" have just ended. Turn off the spinner for them.
+                                        current_response_msg.is_generating = false;
+                                        current_response_msg.generation_time =
+                                            Some(current_response_msg.requested_at.elapsed());
+
+                                        // And create a NEW, separate message for the final answer.
+                                        // This will keep the thought block on screen.
+                                        let model = current_response_msg.model;
+                                        let mut answer_message = Message::assistant(text.into(), model);
+                                        answer_message.is_generating = true; // It has its own spinner.
+                                        self.messages.push(answer_message);
+                                    } else {
+                                        // Either there were no "thoughts", or this is a continuation of the answer.
+                                        // Just append the text to the current last message.
+                                        current_response_msg.content.push_str(&text);
+                                    }
+                                }
+                            }
+                            _ => {} // Handle other parts if needed
+                        }
+                    }
                 }
             })
             .finalize(|result| {
-                if let Ok((_, _)) = result {
+                if let Ok((idx, _, usage)) = result {
+                    if let Some(message) = self.messages.get_mut(idx) {
+                        message.usage = usage;
+                        message.status_message = None;
+                    }
                 } else if let Err(e) = result {
                     let (idx, msg) = match e {
                         Compact::Panicked(e) => {
@@ -997,26 +1053,66 @@ impl Chat {
                         Compact::Suppose((idx, e)) => (idx, e),
                     };
 
-                    let mut clean_msg = msg
-                        .strip_prefix("StatusNotOk(\"")
-                        .unwrap_or(&msg)
-                        .to_string();
-                    if clean_msg.ends_with("\")") {
-                        clean_msg.pop();
-                        clean_msg.pop();
-                    }
-                    let formatted_msg = clean_msg.replace("\\n", "\n").replace("\\\"", "\"");
-                    let final_msg = match serde_json::from_str::<serde_json::Value>(&formatted_msg)
-                    {
-                        Ok(json_value) => {
-                            serde_json::to_string_pretty(&json_value).unwrap_or(formatted_msg)
+                    // Robust answer extraction
+                    let final_msg = if let Some(start_idx) = msg.find('{') {
+                        let json_candidate = &msg[start_idx..];
+                        let end_idx = json_candidate.rfind('}').map(|i| i + 1).unwrap_or(json_candidate.len());
+                        let json_str = &json_candidate[..end_idx];
+
+                        let unescaped = json_str.replace("\\\"", "\"").replace("\\n", "\n");
+                        let target_json = if serde_json::from_str::<serde_json::Value>(json_str).is_ok() {
+                            json_str
+                        } else {
+                            &unescaped
+                        };
+
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(target_json) {
+                            if let Some(err_obj) = json.get("error") {
+                                let code = err_obj.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let status = err_obj.get("status").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+                                let message = err_obj.get("message").and_then(|v| v.as_str()).unwrap_or("No message");
+
+                                match status {
+                                "RESOURCE_EXHAUSTED" => {
+                                    let retry_info = if message.contains("retry in ") {
+                                        if let Some(pos) = message.find("retry in ") {
+                                            format!("\n\n⏳ **Suggestion:** {}", &message[pos..])
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    };
+                                    
+                                    format!("🛑 **Quota Exhausted (429)**\n\nYou've hit the Gemini API rate limit. Please wait a bit or check your Google AI Studio quota.{}", retry_info)
+                                },                                                                    "NOT_FOUND" => {
+                                    format!("🚫 **Model Not Found (404)**\n\nThe model you selected is either not found or not supported for this operation. Try choosing a different model.\n\n**Details:** {}", message)
+                                },
+                                "PERMISSION_DENIED" => {
+                                    format!("🔒 **Permission Denied (403)**\n\nCheck your API Key and project permissions. Make sure the Key is valid for the selected region.\n\n**Details:** {}", message)
+                                },
+                                "INVALID_ARGUMENT" => {
+                                    format!("❌ **Invalid Request (400)**\n\nSomething is wrong with the request parameters.\n\n**Details:** {}", message)
+                                },
+                                _ => format!("❗ **Gemini API Error ({})**\n\n**Status:** {}\n**Message:** {}", code, status, message)
+                            }                            } else {
+                                serde_json::to_string_pretty(&json).unwrap_or_else(|_| msg.clone())
+                            }
+                        } else {
+                            msg.clone()
                         }
-                        Err(_) => formatted_msg,
+                    } else {
+                        msg.clone()
                     };
 
-                    let message = &mut self.messages[idx];
-                    message.content = final_msg.clone();
-                    message.is_error = true;
+                    if let Some(message) = self.messages.get_mut(idx) {
+                        message.content = final_msg.clone();
+                        message.is_error = true;
+                        message.is_generating = false;
+                        message.generation_time = Some(message.requested_at.elapsed());
+                        message.status_message = None;
+                    }
+
                     modal
                         .dialog()
                         .with_body(final_msg)
