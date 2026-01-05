@@ -152,12 +152,14 @@ async fn process_attachments(
                 },
             ));
             // Trigger Uploading state in UI (target the message with the file)
-            h.send((
-                file_msg_index,
-                ChatProgress::FileUploading {
-                    path: file_path.clone(),
-                },
-            ));
+            if allow_upload {
+                h.send((
+                    file_msg_index,
+                    ChatProgress::FileUploading {
+                        path: file_path.clone(),
+                    },
+                ));
+            }
         }
 
         // If status_channel is None (e.g. counting), force inline (upload=false)
