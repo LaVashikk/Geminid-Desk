@@ -560,6 +560,8 @@ async fn request_completion(
     let check_cancellation = || async {
         loop {
             if stop_generating.load(Ordering::SeqCst) {
+                stop_generating.store(false, Ordering::SeqCst);
+                log::warn!("Request cancelled");
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -578,7 +580,7 @@ async fn request_completion(
             Some(Ok(s)) => s.into_stream(),
             Some(Err(e)) => return Err(e.into()),
             None => {
-                log::info!("Streaming request cancelled by user before start.");
+                handle.success((index, response_text, final_usage));
                 return Ok(());
             }
         };
@@ -625,10 +627,7 @@ async fn request_completion(
         log::info!("Sending non-streaming request...");
 
         tokio::select! {
-            _ = check_cancellation() => {
-                log::info!("Non-streaming generation cancelled by user.");
-                stop_generating.store(false, Ordering::SeqCst);
-            }
+            _ = check_cancellation() => {}
             result = content_builder_final.execute() => {
                 match result {
                     Ok(response) => {
@@ -704,6 +703,8 @@ async fn request_completion_code_assist(
     let check_cancellation = || async {
         loop {
             if stop_generating.load(Ordering::SeqCst) {
+                stop_generating.store(false, Ordering::SeqCst);
+                log::warn!("Request cancelled");
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
