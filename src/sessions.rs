@@ -370,12 +370,11 @@ impl Sessions {
                         }
                     }
 
-                    if let Some(chat) = self.chats.get(self.selected_chat) {
-                        if let Some(count) = chat.token_count {
-                            ui.label(format!("{} tokens", count))
-                                .on_hover_text("Estimated total tokens in context");
-                            ui.separator();
-                        }
+                    if let Some(chat) = self.chats.get(self.selected_chat) { // TODO!
+                        let count = chat.token_count.unwrap_or(0);
+                        ui.label(format!("{} tokens", count))
+                            .on_hover_text("Estimated total tokens in context");
+                        ui.separator();
                     }
                 });
             });
