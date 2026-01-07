@@ -8,12 +8,11 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use eframe::egui::{
-    self, pos2, vec2, Align, Color32, CornerRadius, Frame, Key, KeyboardShortcut, Layout, Margin,
-    Modifiers, Pos2, Rect, Stroke, TextStyle,
+    self, Align, Color32, CornerRadius, Frame, Id, Key, KeyboardShortcut, Layout, Margin, Modifiers, Pos2, Rect, Stroke, TextStyle, pos2, vec2
 };
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use egui_modal::{Icon, Modal};
-use egui_virtual_list::VirtualList;
+use egui_robust_scroll::RobustVirtualScroll;
 use flowync::{error::Compact, CompactFlower, CompactHandle};
 use futures_util::TryStreamExt;
 use gemini_rust::{
@@ -49,7 +48,7 @@ const SAFETY_SETTINGS: [SafetySetting; 4] = [
     },
 ];
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MessageRole {
     User,
     Assistant,
@@ -487,8 +486,6 @@ pub struct Chat {
     #[serde(skip)]
     pub retry_message_idx: Option<usize>,
     #[serde(skip)]
-    pub virtual_list: VirtualList,
-    #[serde(skip)]
     pub chatbox_highlighter: MemoizedEasymarkHighlighter,
 }
 
@@ -503,11 +500,6 @@ impl Default for Chat {
             summary: String::new(),
             chatbox_highlighter: MemoizedEasymarkHighlighter::default(),
             stop_generating: Arc::new(AtomicBool::new(false)),
-            virtual_list: {
-                let mut list = VirtualList::new();
-                list.check_for_resize(false);
-                list
-            },
             model_picker: ModelPicker::default(),
             files: Vec::new(),
             prepend_buf: String::new(),
@@ -1362,12 +1354,29 @@ impl Chat {
         let mut any_prepending = false;
         let mut regenerate_response_idx = None;
         let mut message_to_delete_idx: Option<usize> = None;
-        egui::ScrollArea::both()
+        egui::ScrollArea::vertical()
+            .animated(false)
             .stick_to_bottom(true)
             .auto_shrink(false)
             .show(ui, |ui| {
-                ui.add_space(16.0);
-                for (index, message) in self.messages.iter_mut().enumerate() {
+                let scrollbar_width = ui.style().spacing.scroll.bar_width + 12.0;
+                ui.set_width(ui.available_width() - scrollbar_width);
+                
+
+                // ui.add_space(16.0);
+                RobustVirtualScroll::new(Id::new("chat_virtual_list"))
+                    // todo: anchors
+                    // .anchors(anch_indices, |index| { // TODO! maybe any ref?
+                    //     anchors_map.get(&index).cloned().unwrap_or_default() // bruh
+                    // })
+                    .show(
+                        ui,
+                        self.messages.len(),
+                        |i| Id::new(i), // todo: add ID in struct?!
+                        |ui, index|
+                {
+                    // println!("Rendering: '{index}'");
+                    let message = &mut self.messages[index]; // надо
                     let prev_speaking = message.is_speaking;
 
                     if any_prepending && message.is_prepending {
@@ -1402,7 +1411,7 @@ impl Chat {
                     if !prev_speaking && message.is_speaking {
                         new_speaker = Some(index);
                     }
-                }
+                });
 
                 ui.add_space(12.0);
             });

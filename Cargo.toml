@@ -31,7 +31,7 @@ eframe = { version = "0.33.3", default-features = false, features = [
 egui_commonmark = "0.22"
 egui-snow = "0.33"
 egui-modal = { git = "https://github.com/zeozeozeo/egui-modal.git", branch = "egui-0.33" }
-egui_virtual_list = "0.9.0"
+egui_robust_scroll = { git = "https://github.com/LaVashikk/egui_robust_scroll" }
 egui-notify = "0.21.0"
 egui-twemoji = "0.8.0"
 egui_extras = { version = "0.33.3", features = ["file", "image"] }

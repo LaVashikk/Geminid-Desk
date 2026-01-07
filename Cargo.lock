@@ -1195,10 +1195,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_virtual_list"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b81f88c8461c55ffba77f9f5ae8b97ed8b55fbef93bb8dd64a619a6632228138"
+name = "egui_robust_scroll"
+version = "0.1.0"
+source = "git+https://github.com/LaVashikk/egui_robust_scroll#bf7d36456695ab0814f816e502cbacef09026571"
 dependencies = [
  "egui",
  "web-time",
@@ -1721,7 +1720,7 @@ dependencies = [
  "egui-twemoji",
  "egui_commonmark",
  "egui_extras",
- "egui_virtual_list",
+ "egui_robust_scroll",
  "enum-iterator",
  "env_logger",
  "fastrand",

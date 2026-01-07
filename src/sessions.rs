@@ -8,7 +8,6 @@ use egui_commonmark::CommonMarkCache;
 use egui_modal::{Icon, Modal};
 use egui_notify::{Toast, Toasts};
 use egui_twemoji::EmojiLabel;
-use egui_virtual_list::VirtualList;
 use flowync::{CompactFlower, CompactHandle};
 #[cfg(feature = "tts")]
 use parking_lot::RwLock;
@@ -74,8 +73,6 @@ pub struct Sessions {
     flower: BackendFlower,
     #[serde(skip)]
     last_request_time: Instant,
-    #[serde(skip)]
-    virtual_list: Rc<RefCell<VirtualList>>,
     edited_chat: Option<usize>,
     chat_export_format: ChatExportFormat,
     #[serde(skip)]
@@ -151,11 +148,6 @@ impl Default for Sessions {
             commonmark_cache: CommonMarkCache::default(),
             flower: BackendFlower::new(1),
             last_request_time: now,
-            virtual_list: Rc::new(RefCell::new({
-                let mut list = VirtualList::new();
-                list.check_for_resize(false);
-                list
-            })),
             edited_chat: None,
             chat_export_format: ChatExportFormat::default(),
             toasts: Toasts::default(),
@@ -936,19 +928,15 @@ impl Sessions {
 
         ui.add_space(2.0);
 
-        let vlist = self.virtual_list.clone();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            vlist
-                .borrow_mut()
-                .ui_custom_layout(ui, self.chats.len(), |ui, i| {
-                    if self.show_chat_in_sidepanel(ui, i, modal) {
-                        self.selected_chat = i;
-                        self.settings_open = false;
-                        self.edited_chat = None;
-                    }
-                    ui.add_space(2.0);
-                    1
-                });
+            for i in 0..self.chats.len() {
+                if self.show_chat_in_sidepanel(ui, i, modal) {
+                    self.selected_chat = i;
+                    self.settings_open = false;
+                    self.edited_chat = None;
+                }
+                ui.add_space(2.0);
+            }
         });
     }
 }
