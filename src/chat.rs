@@ -1368,7 +1368,32 @@ impl Chat {
             .show(ui, |ui| {
                 let scrollbar_width = ui.style().spacing.scroll.bar_width + 8.0;
 
+                // todo: cache it
+                let anchors_map: std::collections::HashMap<usize, String> = self.messages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, msg)| msg.role == MessageRole::User)
+                    .map(|(idx, msg)| {
+                        let s = &msg.content;
+                        let text = match s.char_indices().nth(50) {
+                            Some((limit, _)) => {
+                                let mut res = String::with_capacity(limit + 3);
+                                res.push_str(&s[..limit]);
+                                res.push_str("...");
+                                res
+                            },
+                            None => s.to_string(),
+                        };
+                        (idx, text)
+                    })
+                    .collect();
+                let anch_indices: Vec<usize> = anchors_map.keys().cloned().collect();
+                // anch_indices.sort_unstable();
+
                 RobustVirtualScroll::new(Id::new(self.id()))
+                    .anchors(anch_indices, |index| { // TODO! maybe any ref?
+                        anchors_map.get(&index).cloned().unwrap_or_default() // bruh
+                    })
                     .show(
                         ui,
                         self.messages.len(),
