@@ -69,7 +69,7 @@ impl Ellama {
         style::set_style(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
-        log::debug!(
+        log::info!(
             "trying to restore app state from storage: {:?}",
             eframe::storage_dir(TITLE)
         );
@@ -81,10 +81,10 @@ impl Ellama {
             }
         }
 
-        log::error!("app state is not saved in storage. This is a bug!");
 
         let mut app = Self::default();
         if app.sessions.try_restore_autosave() {
+            log::error!("app state is not saved in storage. This is a bug!");
             log::info!("Disaster recovery successful.");
         }
 
