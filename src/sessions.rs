@@ -784,9 +784,10 @@ impl Sessions {
 
     #[inline]
     fn add_default_chat(&mut self) {
-        // id 1 is already used, and we (probably) don't want to reuse ids for flowers
+        // Find the highest existing ID to avoid collisions
+        let max_id = self.chats.iter().map(|c| c.id()).max().unwrap_or(0);
         self.chats
-            .push(Chat::new(self.chats.len() + 2, self.model_picker().clone()));
+            .push(Chat::new(max_id + 1, self.model_picker().clone()));
     }
 
     fn remove_chat(&mut self, idx: usize) {
