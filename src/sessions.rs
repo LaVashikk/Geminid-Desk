@@ -475,7 +475,7 @@ impl Sessions {
                     .last_token_check
                     .map_or(true, |t| t.elapsed() > Duration::from_secs(1));
 
-            if should_update {
+            if should_update && !self.settings.api_key.is_empty() {
                 chat.last_content_hash = current_hash;
                 chat.last_token_check = Some(Instant::now());
 
