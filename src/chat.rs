@@ -116,19 +116,18 @@ fn tts_control(tts: SharedTts, text: String, speak: bool) {
     });
 }
 
-fn make_short_name(_name: &str) -> String {
-    // todo stuff
-    // let mut c = name
-    //     .split('/')
-    //     .next()
-    //     .unwrap_or(name)
-    //     .chars()
-    //     .take_while(|c| c.is_alphanumeric());
-    // match c.next() {
-    //     None => "Gemini".to_string(),
-    //     Some(f) => f.to_uppercase().collect::<String>() + c.collect::<String>().as_str(),
-    // }
-    "Gemini".to_string()
+fn make_short_name(name: &str) -> String { // todo: make in static?
+    name
+        .split('-')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 enum MessageAction {
@@ -1436,15 +1435,11 @@ impl Chat {
     }
 
     fn show_suggestions(&mut self, ui: &mut egui::Ui, settings: &Settings) {
-        // todo broken weird shit :p
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
             widgets::centerer(ui, |ui| {
                 let avail_width = ui.available_rect_before_wrap().width() - 24.0;
                 ui.horizontal(|ui| {
-                    ui.heading(format!(
-                        "{}",
-                        self.model_picker.selected.to_string().replace("-", " ")
-                    )); // todo improve it
+                    ui.heading(make_short_name(&self.model_picker.selected.to_string()));
                 });
                 egui::Grid::new("suggestions_grid")
                     .num_columns(3)
