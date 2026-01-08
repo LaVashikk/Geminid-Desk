@@ -19,13 +19,9 @@ use gemini_rust::{
     Gemini, GenerationConfig, HarmBlockThreshold, HarmCategory, Part, SafetySetting, UsageMetadata,
 };
 use std::{
-    io::Write,
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
+    hash::{DefaultHasher, Hash, Hasher}, io::Write, path::PathBuf, sync::{
+        Arc, atomic::{AtomicBool, Ordering}
+    }, time::{Duration, Instant}
 };
 use tokio_stream::StreamExt;
 
@@ -439,6 +435,13 @@ impl Message {
     }
 }
 
+fn generate_id() -> u64 {
+    let mut hasher = DefaultHasher::new();
+    std::time::SystemTime::now().hash(&mut hasher);
+    (&hasher as *const _ as usize).hash(&mut hasher);
+    hasher.finish()
+}
+
 // <completion progress, final completion, error>
 #[derive(Debug, Clone)]
 pub enum ChatProgress {
@@ -472,6 +475,8 @@ pub struct Chat {
     pub files: Vec<Attachment>,
     pub prepend_buf: String,
 
+    #[serde(default = "generate_id")]
+    pub id: u64,
     #[serde(skip)]
     pub token_count: Option<u32>,
     #[serde(skip)]
@@ -497,6 +502,7 @@ impl Default for Chat {
             messages: Vec::new(),
             flower: CompletionFlower::new(1),
             retry_message_idx: None,
+            id: generate_id(),
             summary: String::new(),
             chatbox_highlighter: MemoizedEasymarkHighlighter::default(),
             stop_generating: Arc::new(AtomicBool::new(false)),
@@ -880,7 +886,7 @@ impl Chat {
 
     #[inline]
     pub fn id(&self) -> usize {
-        self.flower.id()
+        self.id as usize
     }
 
     fn send_message(&mut self, settings: &Settings) {
