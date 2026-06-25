@@ -1,14 +1,16 @@
 <div align="center">
+<img width="2784" height="1152" alt="gemini-desk" src="https://github.com/user-attachments/assets/812cce90-33e5-43fa-ad92-826f04ccde0f" />
 
-# ✨ Gemini eGUI
-
-A powerful, feature-rich desktop client for Google's Gemini Models.
-
-![Gemini GUI Chat Interface](media/gemini-gui-main.jpg)
-
+<h2 align="center">
+    A powerful, feature-rich desktop client for Google's Gemini Models.
+</h2>
 </div>
 
 Gemini GUI is a user-friendly interface to chat with Google's powerful Gemini models directly from your desktop. Forked from the excellent [Ellama](https://github.com/zeozeozeo/ellama) project, it swaps the Ollama backend for the official Gemini API and introduces significant UI/UX enhancements.
+
+> [!WARNING]
+> **Project Deprecated / Unmaintained**
+> This project is no longer actively developed. The quality of Gemini models has noticeably degraded, Google completely shut down Google Code Assist on June 20, 2026, and they still haven't managed to make their official web interface less terrible. Feel free to fork, but don't expect new updates :)
 
 # Features
 
@@ -18,6 +20,8 @@ Gemini GUI is a user-friendly interface to chat with Google's powerful Gemini mo
 - **Complete Chat History**: Create, delete, and edit model settings on a per-chat basis. Your conversations are saved locally for you to continue anytime.
 - **Resource Efficient**: Built with Rust and `egui`, the application has minimal RAM and CPU usage, ensuring a smooth experience.
 - **Your API Key, Your Data**: Your conversations go directly to the Google API using your key. There are no intermediary servers or subscriptions.
+
+![Gemini GUI Chat Interface](media/gemini-gui-main.jpg)
 
 # Quickstart
 
